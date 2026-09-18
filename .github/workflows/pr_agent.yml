@@ -25,6 +25,7 @@ jobs:
           CONFIG.FALLBACK_MODELS: '["anthropic/glm-5.3-flash"]'
           ANTHROPIC_API_BASE: https://api.z.ai/api/anthropic
           CONFIG.CUSTOM_MODEL_MAX_TOKENS: 100000
+          CONFIG.MAX_OUTPUT_TOKENS: 32000
           PR_REVIEWER.REQUIRE_SCORE_REVIEW: true
           PR_REVIEWER.REQUIRE_TESTS_REVIEW: true
           PR_REVIEWER.REQUIRE_SECURITY_REVIEW: true
