@@ -21,8 +21,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          CONFIG.MODEL: glm-5.3
-          CONFIG.FALLBACK_MODELS: '["glm-5.3-flash"]'
+          CONFIG.MODEL: openai/glm-5.3
+          CONFIG.FALLBACK_MODELS: '["openai/glm-5.3-flash"]'
           LITELLM.API_BASE: https://api.z.ai/api/paas/v4
           CONFIG.CUSTOM_MODEL_MAX_TOKENS: 100000
           PR_REVIEWER.REQUIRE_SCORE_REVIEW: true
