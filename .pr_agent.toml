@@ -2,6 +2,7 @@
 [config]
 model = "glm-5.3"
 fallback_models = ["glm-5.3-flash"]
+custom_model_max_tokens = 100000
 
 [pr_reviewer]
 require_score_review = true
