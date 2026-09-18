@@ -1,0 +1,18 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/pacing.mjs"],
+            "timeout": 86400,
+            "statusMessage": "Slow-down pacing: pausing…",
+            "async": false
+          }
+        ]
+      }
+    ]
+  }
+}
