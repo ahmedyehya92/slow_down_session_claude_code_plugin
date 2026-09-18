@@ -1,0 +1,9 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-plugin.json",
+  "name": "slow-down-pacing",
+  "displayName": "Slow-Down Pacing",
+  "version": "0.1.0",
+  "description": "Configurable work/pause cycles for Claude Code sessions: work 5 minutes, pause 4 minutes, repeat. Silent to the model; safe for the session.",
+  "author": { "name": "Ahmed Yehya" },
+  "license": "MIT"
+}
