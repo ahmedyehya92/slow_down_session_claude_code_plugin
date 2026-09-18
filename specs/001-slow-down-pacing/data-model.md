@@ -12,7 +12,6 @@ Stored in settings files; the plugin never writes them. Two layers, resolved per
 |---|---|---|---|---|
 | `workMinutes` | number | `5` | MUST be `> 0` and finite | global → project |
 | `pauseMinutes` | number | `4` | MUST be `> 0` and finite | global → project |
-| `statusMessage` | string | `"Slow-down pacing: paused (⏸ {remaining})"` | any string ≤ 100 chars; invalid → default | global → project |
 
 Locations:
 - User-global: `~/.claude/settings.json` → top-level key `"slowDownPacing"`
@@ -22,6 +21,7 @@ Locations:
 - **R-CONF-1** (FR-014): each key resolves independently — project value if present and valid, else global value, else default.
 - **R-CONF-2** (FR-007): if any resolved duration fails validation (`≤ 0`, non-number, non-finite), the **entire configuration is treated as disabled** for that evaluation: the hook exits 0 immediately (no pause ever) and, once per session, emits a `systemMessage` (user-only) describing the misconfiguration. Unknown keys are ignored.
 - **R-CONF-3**: enabled/disabled state is **not** stored here (see Session Pacing State).
+- The pause spinner text is NOT configurable: it is the static `statusMessage` field in `hooks/hooks.json`, which Claude Code reads at plugin load. Time-remaining visibility is provided by `/slow-down-pacing:status` (FR-009).
 
 ## 2. Session Pacing State (per-session, ephemeral by convention)
 
