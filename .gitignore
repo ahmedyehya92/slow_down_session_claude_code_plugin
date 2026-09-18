@@ -1,0 +1,20 @@
+# Node.js
+node_modules/
+dist/
+build/
+*.log
+npm-debug.log*
+.env
+.env.*
+
+# Test output
+coverage/
+
+# Universal
+.DS_Store
+Thumbs.db
+*.tmp
+*.swp
+.idea/
+.vscode/
+/.omo/
