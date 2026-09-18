@@ -4,6 +4,7 @@ model = "anthropic/glm-5.3"
 fallback_models = ["anthropic/glm-5.3-flash"]
 custom_model_max_tokens = 100000
 max_output_tokens = 32000
+ai_timeout = 600
 
 [pr_reviewer]
 require_score_review = true
