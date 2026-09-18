@@ -1,0 +1,22 @@
+# Qodo Merge repo config — GLM-5.3 via z.ai (key lives in GitHub Actions secrets, not here)
+[config]
+model = "glm-5.3"
+fallback_models = ["glm-5.3-flash"]
+
+[pr_reviewer]
+require_score_review = true
+require_tests_review = true
+require_security_review = true
+num_code_suggestions = 6
+extra_instructions = """Be concise and actionable. Flag: hardcoded secrets, missing error handling, dead code, and any architectural layering violations."""
+
+[pr_description]
+publish_labels = true
+generate_ai_title = true
+
+[pr_code_suggestions]
+num_code_suggestions = 4
+commitable_code_suggestions = true
+
+[custom_labels]
+enable = true

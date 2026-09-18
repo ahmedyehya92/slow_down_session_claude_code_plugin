@@ -1,0 +1,29 @@
+name: Qodo Merge PR Agent
+
+on:
+  pull_request:
+    types: [opened, reopened, ready_for_review]
+  issue_comment:
+    types: [created]
+
+permissions:
+  issues: write
+  pull-requests: write
+  contents: write
+
+jobs:
+  pr-agent:
+    if: ${{ (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@pr-agent')) || (github.event_name == 'pull_request' && github.event.action != 'closed') }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: PR Agent action step
+        uses: qodo-ai/pr-agent@main
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          CONFIG.MODEL: glm-5.3
+          CONFIG.FALLBACK_MODELS: '["glm-5.3-flash"]'
+          LITELLM.API_BASE: https://api.z.ai/api/paas/v4
+          PR_REVIEWER.REQUIRE_SCORE_REVIEW: true
+          PR_REVIEWER.REQUIRE_TESTS_REVIEW: true
+          PR_REVIEWER.REQUIRE_SECURITY_REVIEW: true
