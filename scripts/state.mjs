@@ -81,16 +81,20 @@ export function writeState(sessionId, parcel, env = process.env) {
     return false;
   }
 
+  const targetPath = path.join(stateDir, `${sessionId}.json`);
+  const tempPath = `${targetPath}.${process.pid}.${Date.now()}.tmp`;
+
   try {
     fs.mkdirSync(stateDir, { recursive: true });
-    const targetPath = path.join(stateDir, `${sessionId}.json`);
-    const tempPath = `${targetPath}.${process.pid}.${Date.now()}.tmp`;
 
-    const data = JSON.stringify({ sessionId, ...parcel }, null, 2);
+    // sessionId last: a parcel carrying its own (possibly stale) sessionId must
+    // never override the authoritative filename key (R-STATE-1).
+    const data = JSON.stringify({ ...parcel, sessionId }, null, 2);
     fs.writeFileSync(tempPath, data, "utf8");
     fs.renameSync(tempPath, targetPath);
     return true;
   } catch {
+    try { fs.unlinkSync(tempPath); } catch { /* temp file may not exist */ }
     return false;
   }
 }
@@ -110,6 +114,11 @@ export function readPending(env = process.env) {
     const raw = fs.readFileSync(filePath, "utf8");
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== "object") {
+      return null;
+    }
+    // Fail-closed read path, symmetric with writePending's allow-list:
+    // corrupted or foreign pending.json must never flow to callers.
+    if (parsed.action !== "enable" && parsed.action !== "disable") {
       return null;
     }
     return parsed;
@@ -132,16 +141,18 @@ export function writePending({ action, requestedAt }, env = process.env) {
     return false;
   }
 
+  const targetPath = path.join(stateDir, "pending.json");
+  const tempPath = `${targetPath}.${process.pid}.${Date.now()}.tmp`;
+
   try {
     fs.mkdirSync(stateDir, { recursive: true });
-    const targetPath = path.join(stateDir, "pending.json");
-    const tempPath = `${targetPath}.${process.pid}.${Date.now()}.tmp`;
 
     const data = JSON.stringify({ action, requestedAt }, null, 2);
     fs.writeFileSync(tempPath, data, "utf8");
     fs.renameSync(tempPath, targetPath);
     return true;
   } catch {
+    try { fs.unlinkSync(tempPath); } catch { /* temp file may not exist */ }
     return false;
   }
 }
