@@ -29,10 +29,10 @@ description: "Task list for Slow-Down Pacing Mode implementation"
 **Purpose**: Plugin skeleton, manifest, and test harness wiring
 
 - [X] T001 Create the project directory structure exactly as in plan.md: `.claude-plugin/`, `hooks/`, `scripts/`, `commands/`, `tests/unit/`, `tests/integration/`
-- [X] T002 [P] Create `package.json` at repo root with `"type": "module"`, `"private": true`, no runtime dependencies, and a `"test"` script running `node --test "tests/**/*.test.mjs"` (quoted glob — positional directory args like `node --test tests/` fail with MODULE_NOT_FOUND on Node ≥ 21, verified on v25.2.0; Node ≥ 18, ESM — zero npm deps per plan.md)
+- [X] T002 [P] Create `package.json` at repo root with `"type": "module"`, `"private": true`, no runtime dependencies, and a `"test"` script running `node --test "tests/**/*.test.mjs"` (quoted glob — positional directory args like `node --test tests/` fail with MODULE_NOT_FOUND on Node ≥ 21, verified on v25.2.0; dev/test harness requires Node ≥ 21 for glob support, so `engines.node` is `>=21` — plugin scripts themselves use only baseline ESM; zero npm deps per plan.md)
 - [X] T003 [P] Create `.claude-plugin/plugin.json` exactly per contracts/plugin-surface.md §1: `name: "slow-down-pacing"` (the slash-command namespace `/slow-down-pacing:*`), `version: "0.1.0"`, `displayName: "Slow-Down Pacing"`, description, `author.name: "Ahmed Yehya"`, `license: "MIT"`; no `hooks` path override (default `hooks/hooks.json` applies)
 
-**Checkpoint**: Plugin skeleton exists and `npm test` (→ `node --test "tests/**/*.test.mjs"`) runs green on an empty test directory
+**Checkpoint**: Plugin skeleton exists and `npm test` (→ `node --test "tests/**/*.test.mjs"`) runs green, anchored by the `tests/unit/skeleton.test.mjs` placeholder (a bare glob with zero matches is not reliably green across Node versions)
 
 ---
 
