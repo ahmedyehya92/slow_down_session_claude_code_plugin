@@ -1,7 +1,7 @@
 # Qodo Merge repo config — GLM-5.3 via z.ai (key lives in GitHub Actions secrets, not here)
 [config]
-model = "openai/glm-5.3"
-fallback_models = ["openai/glm-5.3-flash"]
+model = "anthropic/glm-5.3"
+fallback_models = ["anthropic/glm-5.3-flash"]
 custom_model_max_tokens = 100000
 
 [pr_reviewer]
