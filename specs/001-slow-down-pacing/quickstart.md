@@ -66,3 +66,10 @@ Expected: plugin loads, no hook errors in `/hooks`; validation passes.
 
 1. Enable pacing, trigger a pause, then exit the session (`Ctrl+C` twice / `exit`).
 2. **Expected**: session exits immediately; the pending hook does not delay shutdown; relaunching shows pacing off (default).
+
+## 9. Input during a pause breaks the pause short (FR-010a)
+
+1. Enable pacing, trigger a pause (spinner visible).
+2. Mid-pause, send the agent a prompt.
+3. **Expected**: the spinner clears immediately — the agent responds without waiting for the pause to finish; the next pause boundary shifts by one full cycle (the interrupted hook was aborted with no state write, so the next hook run recomputes from the wall clock).
+4. Confirm no prompt text was lost or duplicated.

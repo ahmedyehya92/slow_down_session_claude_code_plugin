@@ -15,6 +15,7 @@
 - Q: Does the cycle timer keep running while the session is idle, or does idle time suspend it? → A: The timer runs continuously while pacing is enabled, regardless of whether the agent is idle or active.
 - Q: When the user sends a prompt during a pause, does the agent respond immediately or wait for the pause to complete? → A: Immediately — user input breaks the pause short and starts a new work phase.
 - Q: Where does pacing configuration persist, and what is the default enabled state? → A: Global defaults with per-project overrides (project values win); pacing is disabled by default and must be enabled per session — session-level enable/configure state never carries into the next session.
+- Constitution-constraint note: the constitution's requirement that "enable/disable state MUST be configurable" is satisfied by the per-session mechanism above: `/slow-down-pacing:on` and `/slow-down-pacing:off` write a plugin-scoped pending file under `CLAUDE_PLUGIN_DATA`, which the hook adopts at the next cycle boundary. Enable state is deliberately not a settings-file key (clarified decision, Q4); only durations persist in settings.
 
 ---
 
