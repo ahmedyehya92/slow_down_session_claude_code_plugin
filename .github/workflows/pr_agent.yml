@@ -2,7 +2,7 @@ name: Qodo Merge PR Agent
 
 on:
   pull_request:
-    types: [opened, reopened, ready_for_review]
+    types: [opened, reopened, ready_for_review, synchronize]
   issue_comment:
     types: [created]
 
@@ -24,6 +24,7 @@ jobs:
           CONFIG.MODEL: glm-5.3
           CONFIG.FALLBACK_MODELS: '["glm-5.3-flash"]'
           LITELLM.API_BASE: https://api.z.ai/api/paas/v4
+          CONFIG.CUSTOM_MODEL_MAX_TOKENS: 100000
           PR_REVIEWER.REQUIRE_SCORE_REVIEW: true
           PR_REVIEWER.REQUIRE_TESTS_REVIEW: true
           PR_REVIEWER.REQUIRE_SECURITY_REVIEW: true
