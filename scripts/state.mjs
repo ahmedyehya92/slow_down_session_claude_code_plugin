@@ -179,3 +179,126 @@ export function deletePending(env = process.env) {
     return false;
   }
 }
+
+/**
+ * Reads/parses `<stateDir>/<sessionId>.json` without env resolution.
+ * Returns null on any failure (missing, unparseable, non-object).
+ */
+function readStateFileIn(stateDir, sessionId) {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(path.join(stateDir, `${sessionId}.json`), "utf8"));
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Consumes pending.json if present, non-stale (<= 24h), valid, and matching sessionId.
+ * Stale intents and complete-but-invalid intents (unknown action) are PRUNED
+ * (file deleted) whenever any session's hook encounters them; a fresh valid
+ * intent scoped to a different session is preserved for that session (qodo PR #7).
+ * Atomically updates state file for sessionId and unlinks pending.json.
+ * Returns the state parcel applied ({ enabled: true, phase: "work", cycleStartedAt } or { enabled: false }),
+ * or null if no valid/fresh pending action applied or stateDir null.
+ * An `enable` for a session already enabled with a valid anchor is a NO-OP
+ * adoption (contract §4 /on idempotence, review F3): the pending file is
+ * consumed and the existing state parcel returned unchanged — a fresh cycle
+ * starts only on an actual transition (never-enabled, disabled, unreadable,
+ * or sessionId-mismatched state).
+ * Never throws.
+ */
+export function applyPending(stateDir, sessionId, now = Date.now()) {
+  if (!stateDir || !sessionId) {
+    return null;
+  }
+
+  const pendingPath = path.join(stateDir, "pending.json");
+  let pendingRaw;
+  try {
+    pendingRaw = fs.readFileSync(pendingPath, "utf8");
+  } catch {
+    return null;
+  }
+
+  let pending;
+  try {
+    pending = JSON.parse(pendingRaw);
+  } catch {
+    return null;
+  }
+
+  if (!pending || typeof pending !== "object") {
+    return null;
+  }
+
+  // Stale check FIRST: requestedAt missing, non-finite, or older than 24 hours
+  // (86,400,000 ms) — pruned regardless of session scope, so a stale intent
+  // never lingers just because the wrong session's hook saw it (qodo PR #7).
+  const { action, requestedAt } = pending;
+  const isStale = typeof requestedAt !== "number" ||
+    !Number.isFinite(requestedAt) ||
+    (now - requestedAt > 24 * 60 * 60 * 1000);
+
+  if (isStale) {
+    try { fs.unlinkSync(pendingPath); } catch { /* ignore if already unlinked */ }
+    return null;
+  }
+
+  // Action allow-list check: a complete-but-invalid intent can never become
+  // valid — prune it rather than re-reading it on every hook run (qodo PR #7).
+  if (action !== "enable" && action !== "disable") {
+    try { fs.unlinkSync(pendingPath); } catch { /* ignore if already unlinked */ }
+    return null;
+  }
+
+  // Session ID scope check LAST: a fresh, valid intent for another session
+  // must be preserved for that session to adopt.
+  if (pending.sessionId && pending.sessionId !== sessionId) {
+    return null;
+  }
+
+  let parcel;
+  if (action === "enable") {
+    // Contract §4 idempotence (review F3): re-running /on while already
+    // enabled (valid anchor, matching sessionId per R-STATE-1) must not
+    // restart the running cycle — consume the intent, keep the state.
+    const existing = readStateFileIn(stateDir, sessionId);
+    if (
+      existing &&
+      existing.sessionId === sessionId &&
+      existing.enabled === true &&
+      typeof existing.cycleStartedAt === "number" &&
+      Number.isFinite(existing.cycleStartedAt)
+    ) {
+      try { fs.unlinkSync(pendingPath); } catch { /* already unlinked */ }
+      return existing;
+    }
+    parcel = {
+      enabled: true,
+      phase: "work",
+      cycleStartedAt: now,
+    };
+  } else {
+    parcel = {
+      enabled: false,
+    };
+  }
+
+  const targetPath = path.join(stateDir, `${sessionId}.json`);
+  const tempPath = `${targetPath}.${process.pid}.${Date.now()}.tmp`;
+
+  try {
+    fs.mkdirSync(stateDir, { recursive: true });
+    const data = JSON.stringify({ ...parcel, sessionId }, null, 2);
+    fs.writeFileSync(tempPath, data, "utf8");
+    fs.renameSync(tempPath, targetPath);
+  } catch {
+    try { fs.unlinkSync(tempPath); } catch { /* temp file cleanup */ }
+    return null;
+  }
+
+  try { fs.unlinkSync(pendingPath); } catch { /* cleanup pending */ }
+
+  return parcel;
+}

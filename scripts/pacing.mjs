@@ -2,6 +2,7 @@
  * Slow-Down Pacing Mode — Stop-hook entry point (scripts/pacing.mjs).
  *
  * User Story 1: Deterministic Work/Pause Cycle.
+ * User Story 3 / T017: Configuration Resolution & Pending Adoption Wiring.
  *
  * This module is invoked by Claude Code through the Stop hook (hooks.json)
  * every time the model finishes a turn. It synchronously computes where the
@@ -11,9 +12,9 @@
  *
  * References:
  * - Spec: FR-001 (cycle), FR-002/FR-002a (5/4 schedule, overrun tolerance),
- *   FR-004 (Model Silence — zero stdout/stderr), FR-008 (graceful degradation),
- *   FR-010a (user prompt breaks the pause), FR-011 (continuous cycle timer,
- *   idle time consumed).
+ *   FR-004 (Model Silence — zero stdout/stderr), FR-005 (config), FR-006 (pending adoption),
+ *   FR-008 (graceful degradation), FR-010a (user prompt breaks the pause),
+ *   FR-011 (continuous cycle timer, idle time consumed).
  * - Data Model §3 (phase transition table) and §4 (hook semantics).
  * - Plugin Surface Contract §3 (stdin JSON envelope, NODE_ENV test seams:
  *   SLOW_DOWN_NOW, SLOW_DOWN_TIME_SCALE; black-box test surface).
@@ -33,13 +34,10 @@
 import * as fs from "node:fs";
 import { pathToFileURL } from "node:url";
 
-import { readState, writeState } from "./state.mjs";
+import { resolveConfig } from "./config.mjs";
+import { applyPending, readState, resolveStateDir, writeState } from "./state.mjs";
 
-/** Default schedule per FR-002: 5 minutes work, 4 minutes pause. */
-export const DEFAULT_CONFIG = Object.freeze({
-  workMs: 5 * 60_000,
-  pauseMs: 4 * 60_000,
-});
+export { DEFAULT_CONFIG } from "./config.mjs";
 
 const testMode = (env) => env && env.NODE_ENV === "test";
 
@@ -220,6 +218,10 @@ async function executeHook(input, env) {
     return undefined; // guard 4
   }
 
+  // Pending adoption (FR-006, US3/T017): adopt pending enable/disable before
+  // reading session state and evaluating the transition table.
+  applyPending(resolveStateDir(env), sessionId, resolveNow(env));
+
   const state = readState(sessionId, env);
   if (!state || state.enabled !== true) {
     return undefined; // guard 5
@@ -228,9 +230,15 @@ async function executeHook(input, env) {
     return undefined; // guard 6
   }
 
-  // Phase 3 scope: the built-in default schedule. Wiring user configuration
-  // (config.mjs) into this call is a later task (T015/T017, FR-005).
-  const config = DEFAULT_CONFIG;
+  const config = resolveConfig(env);
+  if (config.disabled === true) {
+    if (state.disabledNoticeShown === true) {
+      return undefined;
+    }
+    writeState(sessionId, { ...state, disabledNoticeShown: true }, env);
+    return config.noticeReason;
+  }
+
   const now = resolveNow(env);
   const { phase, remainingMs, nextCycleStartedAt } = computePhase(state, config, now);
 
