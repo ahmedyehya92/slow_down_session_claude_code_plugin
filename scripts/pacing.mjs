@@ -19,6 +19,15 @@
  *   SLOW_DOWN_NOW, SLOW_DOWN_TIME_SCALE; black-box test surface).
  * - Constitution: I (Session Integrity — never signal/kill the harness; only
  *   gate its continuation), II (Model Silence), III (Deterministic Pacing).
+ *
+ * US2 hardening (T012): the output contract is structurally guaranteed, not
+ * incidental. runHook wraps its whole body in a top-level try/catch — ANY
+ * internal error, including one thrown two layers deep in a helper, degrades
+ * to a silent exit 0. stderr is never written anywhere in this module; stdout
+ * is written in exactly ONE place — runHook, only after the whole body has
+ * succeeded — and only for the single permitted `{"systemMessage": ...}`
+ * misconfiguration notice (FR-007, US3), which executeHook RETURNS rather
+ * than writes (qodo PR #6 review).
  */
 
 import * as fs from "node:fs";
@@ -155,35 +164,68 @@ async function sleep(realMs) {
  * @returns {Promise<number>} exit status (always 0 — silence is the contract)
  */
 export async function runHook(input, env = process.env) {
+  try {
+    const systemMessage = await executeHook(input, env);
+    // The single permitted stdout emission (FR-007, US3/T017): executeHook
+    // never writes output itself — it RETURNS the optional notice, and the one
+    // write happens here, only after the whole body has succeeded. An error
+    // anywhere downstream of a future notice decision therefore cannot leak
+    // partial output while still exiting 0 (qodo PR #6 review).
+    if (typeof systemMessage === "string" && systemMessage.length > 0) {
+      process.stdout.write(JSON.stringify({ systemMessage }));
+    }
+    return 0;
+  } catch {
+    // US2/T012 hardening: the ENTIRE hook body is wrapped here. Any internal
+    // error — even one thrown two layers deep in a helper (e.g. a throwing env
+    // accessor inside state.mjs) — degrades to a silent no-op. Because the
+    // only permitted write happens above — AFTER full success — no error path
+    // can emit output. The silence contract is structural, not incidental
+    // (FR-004/FR-008).
+    return 0;
+  }
+}
+
+/**
+ * Internal hook logic — never called directly; guarded by runHook's top-level
+ * try/catch. Guard order is load-bearing: every short-circuit below must exit
+ * before reading or writing any state.
+ *
+ * Output contract: NEVER writes stdout directly. Returns the optional FR-007
+ * misconfiguration notice (a non-empty string) for runHook to emit as the
+ * single permitted `{"systemMessage": ...}` write after full success; every
+ * current path returns undefined (no notice exists until US3/T017).
+ */
+async function executeHook(input, env) {
   let envelope = null;
   try {
     envelope = JSON.parse(input);
   } catch {
-    return 0; // guard 1: malformed envelope is never our signal
+    return undefined; // guard 1: malformed envelope is never our signal
   }
   if (!envelope || typeof envelope !== "object") {
-    return 0;
+    return undefined;
   }
 
   const sessionId = envelope.session_id;
   // Guard 2, incl. shape check (review F3): a path-shaped session_id must
   // never reach state.mjs's path.join (traversal hardening).
   if (typeof sessionId !== "string" || sessionId.length === 0 || !/^[\w.-]+$/.test(sessionId)) {
-    return 0;
+    return undefined;
   }
   if (envelope.hook_event_name !== "Stop") {
-    return 0; // guard 3
+    return undefined; // guard 3
   }
   if (envelope.stop_hook_active === true) {
-    return 0; // guard 4
+    return undefined; // guard 4
   }
 
   const state = readState(sessionId, env);
   if (!state || state.enabled !== true) {
-    return 0; // guard 5
+    return undefined; // guard 5
   }
   if (typeof state.cycleStartedAt !== "number" || !Number.isFinite(state.cycleStartedAt)) {
-    return 0; // guard 6
+    return undefined; // guard 6
   }
 
   // Phase 3 scope: the built-in default schedule. Wiring user configuration
@@ -201,7 +243,7 @@ export async function runHook(input, env = process.env) {
       // fields survive the write.
       writeState(sessionId, { ...state, cycleStartedAt: nextCycleStartedAt, phase: "work" }, env);
     }
-    return 0;
+    return undefined;
   }
 
   // Pause phase: hold the next turn for the remaining pause (FR-001). The
@@ -222,21 +264,29 @@ export async function runHook(input, env = process.env) {
     // is re-persisted (spread) so concurrent session fields survive the write.
     writeState(sessionId, { ...fresh, cycleStartedAt: nextCycleStartedAt + config.workMs + config.pauseMs, phase: "work" }, env);
   }
-  return 0;
+  return undefined;
 }
 
 /**
  * Reads stdin (available only when invoked as a script) and runs the hook.
- * Any failure is swallowed: the hook contract is exit 0, always.
+ * Any failure is swallowed — twice over: the stdin read is guarded, and the
+ * whole body sits inside a top-level try/catch. The hook contract is exit 0,
+ * always, with neither stdout nor stderr written (FR-004).
  */
 async function main() {
-  let input = "";
   try {
-    input = fs.readFileSync(0, "utf8");
+    let input = "";
+    try {
+      input = fs.readFileSync(0, "utf8");
+    } catch {
+      return 0; // stdin unavailable → nothing to act on (still silent exit 0)
+    }
+    return await runHook(input);
   } catch {
-    return; // stdin unavailable → nothing to act on (still silent exit 0)
+    // Last-resort: even a synchronous surprise outside runHook stays a silent
+    // no-op — runHook already guarantees 0 for anything it touches.
+    return 0;
   }
-  await runHook(input);
 }
 
 // Run only when executed directly (node scripts/pacing.mjs), never when
