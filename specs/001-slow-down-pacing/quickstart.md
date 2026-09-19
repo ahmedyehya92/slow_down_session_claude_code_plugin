@@ -5,8 +5,8 @@ End-to-end validation scenarios for the plugin. Prerequisites: Claude Code ≥ 2
 ## 0. Automated test suite
 
 ```bash
-node --test tests/           # unit + integration, runs in seconds (fake clock)
-node --test tests/unit/      # cycle math, config resolution, state adoption
+npm test                     # → node --test "tests/**/*.test.mjs": unit + integration, seconds (fake clock)
+node --test "tests/unit/*.test.mjs"   # cycle math, config resolution, state adoption
 ```
 
 Expected: all green. The integration suite asserts the hook's **empty-output exit-0 contract** (model silence) and that `SLOW_DOWN_TIME_SCALE`-scaled sleeps match the 5/4 cadence.

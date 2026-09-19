@@ -80,11 +80,11 @@ description: "Task list for Slow-Down Pacing Mode implementation"
 
 ### Tests for User Story 2 ⚠️
 
-- [ ] T011 [P] [US2] Extend `tests/integration/hook.test.mjs` with silence assertions (FR-004, Constitution II): for malformed/non-JSON stdin, missing fields, unknown `hook_event_name`, `stop_hook_active: true`, absent state file, and a normal pause, assert exit code 0, empty stderr on every path, stdout empty on every path except the permitted `{"systemMessage": ...}` object, and that the emitted JSON never contains `decision`, `reason`, `continue`, or `hookSpecificOutput` keys (data-model §4 "Never emitted by the plugin")
+- [X] T011 [P] [US2] Extend `tests/integration/hook.test.mjs` with silence assertions (FR-004, Constitution II): for malformed/non-JSON stdin, missing fields, unknown `hook_event_name`, `stop_hook_active: true`, absent state file, and a normal pause, assert exit code 0, empty stderr on every path, stdout empty on every path except the permitted `{"systemMessage": ...}` object, and that the emitted JSON never contains `decision`, `reason`, `continue`, or `hookSpecificOutput` keys (data-model §4 "Never emitted by the plugin")
 
 ### Implementation for User Story 2
 
-- [ ] T012 [US2] Harden the output contract in `scripts/pacing.mjs`: wrap the entire hook body in a top-level try/catch whose catch exits 0 with no output (any internal error degrades to a no-op, never noise); the ONLY permitted write is one `JSON.stringify({ systemMessage })` for the FR-007 misconfiguration notice (implemented with US3); stderr is never written anywhere in any script (Constitution II)
+- [X] T012 [US2] Harden the output contract in `scripts/pacing.mjs`: wrap the entire hook body in a top-level try/catch whose catch exits 0 with no output (any internal error degrades to a no-op, never noise); the ONLY permitted write is one `JSON.stringify({ systemMessage })` for the FR-007 misconfiguration notice (implemented with US3); stderr is never written anywhere in any script (Constitution II)
 
 **Checkpoint**: User Stories 1 AND 2 both work — cycles run and the model perceives nothing, on every path
 
@@ -136,7 +136,7 @@ description: "Task list for Slow-Down Pacing Mode implementation"
 
 **Purpose**: Full-suite validation, plugin validation, and constitution re-check
 
-- [ ] T023 Run the complete automated suite: `node --test tests/` — all green, including the empty-output exit-0 contract and `SLOW_DOWN_TIME_SCALE`-scaled 5/4 cadence assertions (quickstart.md §0)
+- [ ] T023 Run the complete automated suite: `npm test` (→ `node --test "tests/**/*.test.mjs"`; positional directory args like `node --test tests/` fail with MODULE_NOT_FOUND on Node ≥ 21 — see T002) — all green, including the empty-output exit-0 contract and `SLOW_DOWN_TIME_SCALE`-scaled 5/4 cadence assertions (quickstart.md §0)
 - [ ] T024 Run `claude plugin validate . --strict` and confirm manifest + hooks.json validation passes with no hook errors (quickstart.md §1)
 - [ ] T025 Execute the quickstart.md manual scenarios end-to-end on a live session: §2 default-off guarantee, §3 one full 5/4 cycle with zero context gain, §4/§5 multi-cycle + shortened-duration behavior, §6 misconfiguration safety (user-only notice, no pauses), §7 session isolation (session B never pauses), §8 interrupt/shutdown precedence, §9 input during a pause breaks it short (FR-010a)
 - [ ] T026 Constitution re-check against `.specify/memory/constitution.md`: verify no code path signals, kills, or writes to the session process (I), zero model-visible output outside slash-command turns (II), wall-clock-only determinism (III), both human surfaces present (IV), and no new dependencies/daemons added beyond the 3 scripts + 3 commands (V); record evidence in plan.md's constitution table

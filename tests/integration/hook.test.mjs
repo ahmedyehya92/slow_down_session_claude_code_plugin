@@ -16,6 +16,10 @@ import { fileURLToPath } from "node:url";
 // SLOW_DOWN_TIME_SCALE test seam.
 
 const HOOK_PATH = fileURLToPath(new URL("../../scripts/pacing.mjs", import.meta.url));
+// T011 — direct import only for the throw-proofing check (see the US2 test
+// below): the hook contract says runHook itself must never reject, even under
+// hostile internals. Every other US2 path is exercised black-box via spawnSync.
+import { runHook as runHookDirect } from "../../scripts/pacing.mjs";
 
 // Default schedule (FR-002) in milliseconds.
 const WORK_MS = 5 * 60_000;
@@ -75,6 +79,35 @@ function assertSilentSuccess(r, label) {
   assert.equal(r.stdout, "", `${label}: stdout must be empty (FR-004)`);
   assert.equal(r.stderr, "", `${label}: stderr must be empty (FR-004)`);
   assert.equal(r.error, undefined, `${label}: no spawn error (${r.error})`);
+}
+
+// T011 — US2 Model Silence (FR-004, Constitution II, data-model §4).
+// The full silence contract: exit 0, empty stderr, and stdout either empty or
+// EXACTLY the one permitted `{"systemMessage": <string>}` object (the FR-007
+// human-only notice) — and never the "Never emitted by the plugin" keys
+// `decision`, `reason`, `continue`, `hookSpecificOutput`.
+function assertModelSilence(r, label) {
+  assert.equal(r.status, 0, `${label}: expected exit code 0 (got ${r.status})`);
+  assert.equal(r.stderr, "", `${label}: stderr must be empty on every path (FR-004)`);
+  if (r.stdout === "") {
+    return; // the silent path
+  }
+  // Non-empty stdout must be the single permitted shape (contract §3).
+  let emitted;
+  assert.doesNotThrow(
+    () => { emitted = JSON.parse(r.stdout); },
+    `${label}: non-empty stdout must be valid JSON (got: ${r.stdout})`,
+  );
+  assert.ok(
+    emitted !== null && typeof emitted === "object" && !Array.isArray(emitted),
+    `${label}: emitted JSON must be an object (got: ${JSON.stringify(emitted)})`,
+  );
+  const keys = Object.keys(emitted);
+  for (const forbidden of ["decision", "reason", "continue", "hookSpecificOutput"]) {
+    assert.ok(!keys.includes(forbidden), `${label}: must never emit "${forbidden}" (data-model §4)`);
+  }
+  assert.deepEqual(keys, ["systemMessage"], `${label}: only permitted key is systemMessage (got [${keys.join(", ")}])`);
+  assert.equal(typeof emitted.systemMessage, "string", `${label}: systemMessage must be a string`);
 }
 
 test("work phase: exits 0 silently and near-instant, no state write needed", () => {
@@ -319,4 +352,148 @@ test("state changed mid-pause is never clobbered by the post-sleep write (review
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
+});
+
+// ---- T011 — User Story 2: Model Silence on every code path (FR-004) ----
+
+test("US2: hostile/malformed stdin shapes are silent no-ops that never touch state (FR-004)", () => {
+  const dir = makeTmpDir();
+  try {
+    // An enabled mid-pause state is planted so any path that *accidentally*
+    // reached the cycle logic (sleep + write) would be observable: every
+    // hostile input must short-circuit before reading or writing it.
+    writeSessionState(dir, SESSION_ID, {
+      enabled: true,
+      phase: "pause",
+      cycleStartedAt: FIXED_NOW - WORK_MS - PAUSE_MS / 2,
+    });
+    const statePath = path.join(dir, "sessions", `${SESSION_ID}.json`);
+    const before = fs.readFileSync(statePath, "utf8");
+
+    const hostileInputs = [
+      ["not JSON {{{", "malformed JSON"],
+      ["", "empty stdin"],
+      ["null", "JSON null"],
+      ["42", "JSON number"],
+      ["[]", "JSON array"],
+      ["{}", "missing every field"],
+      ['{"session_id": 12345, "hook_event_name": "Stop"}', "non-string session_id"],
+      ['{"hook_event_name": "Stop", "stop_hook_active": false}', "missing session_id"],
+      ['{"session_id": "ok", "stop_hook_active": false}', "missing hook_event_name"],
+    ];
+    for (const [stdin, label] of hostileInputs) {
+      const r = runHook(dir, stdin);
+      assertModelSilence(r, label);
+      assert.ok(r.elapsedMs < INSTANT_THRESHOLD_MS, `${label} should be near-instant, took ${r.elapsedMs} ms`);
+    }
+    assert.equal(
+      fs.readFileSync(statePath, "utf8"),
+      before,
+      "hostile stdin must never reach (write to) the session state",
+    );
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("US2: corrupt/mismatched session state fails closed — silent no-op, file never rewritten (mid-cycle error)", () => {
+  const dir = makeTmpDir();
+  try {
+    // The state-side "mid-cycle error" shapes from this phase's independent
+    // test. Each must degrade to a silent no-op (readState → null, or guards
+    // 5/6) — and fail INERTLY: a rejected state file is never rewritten.
+    const badStates = [
+      ["c1", "not json{{{ ", "corrupt JSON state file"],
+      ["c2", JSON.stringify({ sessionId: "c2", enabled: true, phase: "work", cycleStartedAt: "abc" }), "non-numeric cycleStartedAt (guard 6)"],
+      ["c3", JSON.stringify({ sessionId: "c3", enabled: "yes", phase: "pause", cycleStartedAt: FIXED_NOW - WORK_MS - PAUSE_MS / 2 }), "truthy-but-not-true enabled (guard 5)"],
+      ["c4", JSON.stringify({ sessionId: "someoneelse", enabled: true, phase: "pause", cycleStartedAt: FIXED_NOW - WORK_MS - PAUSE_MS / 2 }), "sessionId mismatch (R-STATE-1)"],
+    ];
+    fs.mkdirSync(path.join(dir, "sessions"), { recursive: true });
+    const paths = badStates.map(([id, contents]) => {
+      const p = path.join(dir, "sessions", `${id}.json`);
+      fs.writeFileSync(p, contents);
+      return [id, p];
+    });
+    const before = new Map(paths.map(([id, p]) => [id, fs.readFileSync(p, "utf8")]));
+
+    for (const [id, , label] of badStates) {
+      const r = runHook(dir, JSON.stringify({ session_id: id, hook_event_name: "Stop", stop_hook_active: false }));
+      assertModelSilence(r, label);
+      assert.ok(r.elapsedMs < INSTANT_THRESHOLD_MS, `${label} should be near-instant, took ${r.elapsedMs} ms`);
+    }
+
+    // Fail-closed must also mean fail-inert: no guard path may "repair" the
+    // bad state it rejected (e.g. guard 6 leaking would persist a NaN anchor).
+    for (const [id, p] of paths) {
+      assert.equal(fs.readFileSync(p, "utf8"), before.get(id), `${id}: rejected state must be left untouched`);
+    }
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("US2: absent state file → pacing off (FR-015), silent near-instant no-op", () => {
+  const dir = makeTmpDir();
+  try {
+    // Fresh dir with no sessions/ and no state for SESSION_ID: disabled default.
+    const r = runHook(dir, stopInput());
+    assertModelSilence(r, "absent state file");
+    assert.ok(r.elapsedMs < INSTANT_THRESHOLD_MS, `absent state should be near-instant, took ${r.elapsedMs} ms`);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("US2: valid envelopes on non-pacing paths keep the silence contract (data-model §4)", () => {
+  const dir = makeTmpDir();
+  try {
+    // Enabled mid-pause again: these envelopes must NOT sleep or emit — they
+    // are the defensive no-op paths that must stay model-silent.
+    writeSessionState(dir, SESSION_ID, {
+      enabled: true,
+      phase: "pause",
+      cycleStartedAt: FIXED_NOW - WORK_MS - PAUSE_MS / 2,
+    });
+    const shapes = [
+      [JSON.stringify({ session_id: SESSION_ID, hook_event_name: "UserPromptSubmit", stop_hook_active: false }), "unknown hook_event_name"],
+      [JSON.stringify({ session_id: SESSION_ID, hook_event_name: "Stop", stop_hook_active: true }), "stop_hook_active=true"],
+    ];
+    for (const [stdin, label] of shapes) {
+      const r = runHook(dir, stdin);
+      assertModelSilence(r, label);
+      assert.ok(r.elapsedMs < INSTANT_THRESHOLD_MS, `${label} should be near-instant, took ${r.elapsedMs} ms`);
+    }
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("US2: a complete pause keeps the silence contract end to end (FR-004)", () => {
+  const dir = makeTmpDir();
+  try {
+    writeSessionState(dir, SESSION_ID, {
+      enabled: true,
+      phase: "pause",
+      cycleStartedAt: FIXED_NOW - WORK_MS - PAUSE_MS / 2,
+    });
+    const r = runHook(dir, stopInput());
+    assertModelSilence(r, "normal pause");
+    assert.ok(r.elapsedMs >= PAUSE_MS / 2 / TIME_SCALE, `pause must actually wait, took ${r.elapsedMs} ms`);
+    assert.ok(r.elapsedMs <= PAUSE_MS / 2 / TIME_SCALE + 2_000, `pause exceeded ±2 s tolerance (took ${r.elapsedMs} ms)`);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("US2: runHook never throws — any internal error degrades to a silent 0, never noise (T012)", async () => {
+  // A hostile env whose every accessor throws: without the top-level try/catch
+  // the hook promise would reject (today) instead of returning 0. This is the
+  // fail-first proof that the output contract is structurally guaranteed, not
+  // incidental. Black-box intent, direct-call proof.
+  const evilEnv = new Proxy({}, { get() { throw new Error("boom"); } });
+  const exit = await runHookDirect(
+    JSON.stringify({ session_id: SESSION_ID, hook_event_name: "Stop", stop_hook_active: false }),
+    evilEnv,
+  );
+  assert.equal(exit, 0, "internal error must degrade to exit 0 (no-op, FR-004/FR-008)");
 });
