@@ -89,6 +89,8 @@ All commands: `disable-model-invocation: true`, `allowed-tools: Bash(node *)` sc
 ### `/slow-down-pacing:status`
 - Effect: read-only — prints enabled/disabled, current phase, time remaining in phase, work/pause durations, and whether each came from project or global config.
 - MUST be safe when pacing has never been enabled (prints "pacing is off (default)").
+- Invalid configuration (R-CONF-2) is reported as NOT running with the reason — never a live countdown for a cycle that will not execute; this takes precedence over the never-enabled marker, so a never-enabled session with broken settings still surfaces the problem (review F1, phase 6).
+- If the session id cannot be determined, the command fails honestly (stderr + exit 1) rather than printing a false "off" (review F2, phase 6).
 
 ## 5. Configuration Contract (settings files)
 

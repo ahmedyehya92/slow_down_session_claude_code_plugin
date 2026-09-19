@@ -121,12 +121,12 @@ description: "Task list for Slow-Down Pacing Mode implementation"
 
 ### Tests for User Story 4 ⚠️
 
-- [ ] T020 [P] [US4] Add status-report coverage to `tests/unit/state.test.mjs` (or a small `tests/unit/status.test.mjs`): the status projection returns `{ enabled, phase, remainingInPhaseMs, workMs, pauseMs, sourcePerKey }` correctly for enabled-mid-cycle, enabled-at-cycle-start, disabled-state-file, and never-enabled (projection returns enabled false with a "pacing is off (default)" marker) — read-only, writes nothing
+- [X] T020 [P] [US4] Add status-report coverage to `tests/unit/state.test.mjs` (or a small `tests/unit/status.test.mjs`): the status projection returns `{ enabled, phase, remainingInPhaseMs, workMs, pauseMs, sourcePerKey }` correctly for enabled-mid-cycle, enabled-at-cycle-start, disabled-state-file, and never-enabled (projection returns enabled false with a "pacing is off (default)" marker) — read-only, writes nothing
 
 ### Implementation for User Story 4
 
-- [ ] T021 [US4] Create `commands/status.md` per contracts/plugin-surface.md §4: `/slow-down-pacing:status` is strictly read-only — prints enabled/disabled, current phase, time remaining in phase, work/pause durations, and whether each duration came from project or global config; when pacing has never been enabled prints "pacing is off (default)"; command text must not cause any state writes
-- [ ] T022 [US4] Add the human-visible status projection to `scripts/state.mjs`/`scripts/pacing.mjs` (exported `projectStatus(sessionId, config, now)`): reuses `computePhase` from T008 for phase + remaining; confirm the pause surface is exactly the static `hooks/hooks.json` `statusMessage` spinner plus `/slow-down-pacing:status`, and that neither can reach the model (FR-009, US2)
+- [X] T021 [US4] Create `commands/status.md` per contracts/plugin-surface.md §4: `/slow-down-pacing:status` is strictly read-only — prints enabled/disabled, current phase, time remaining in phase, work/pause durations, and whether each duration came from project or global config; when pacing has never been enabled prints "pacing is off (default)"; command text must not cause any state writes (review F1/F2 phase 6: invalid config R-CONF-2 → "NOT running — configuration invalid" with the reason, taking precedence over the never-enabled marker; unresolvable session id → stderr error + exit 1, never a false "off")
+- [X] T022 [US4] Add the human-visible status projection to `scripts/state.mjs`/`scripts/pacing.mjs` (exported `projectStatus(sessionId, config, now)`): reuses `computePhase` from T008 for phase + remaining; confirm the pause surface is exactly the static `hooks/hooks.json` `statusMessage` spinner plus `/slow-down-pacing:status`, and that neither can reach the model (FR-009, US2)
 
 **Checkpoint**: All user stories independently functional — pacing cycles, silent to the model, configurable live, visible to the human
 

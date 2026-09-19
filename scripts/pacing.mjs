@@ -29,6 +29,11 @@
  * succeeded — and only for the single permitted `{"systemMessage": ...}`
  * misconfiguration notice (FR-007, US3), which executeHook RETURNS rather
  * than writes (qodo PR #6 review).
+ *
+ * US4 (T022): `projectStatus` is a read-only projection for
+ * `/slow-down-pacing:status`. The only human-visible pause surfaces are the
+ * static `hooks/hooks.json` `statusMessage` spinner and that slash command —
+ * neither reaches the model (FR-009, Constitution II).
  */
 
 import * as fs from "node:fs";
@@ -78,6 +83,128 @@ export function computePhase(state, config, now) {
     return { phase: "work", remainingMs: workMs - offset, nextCycleStartedAt: currentCycleStart };
   }
   return { phase: "pause", remainingMs: cycleMs - offset, nextCycleStartedAt: currentCycleStart };
+}
+
+/**
+ * Human-visible status projection for `/slow-down-pacing:status` (FR-009, US4).
+ *
+ * Read-only: calls `readState` only — never writes state, never adopts pending,
+ * never touches settings. Phase + remaining reuse `computePhase` (T008).
+ *
+ * @param {string} sessionId
+ * @param {{workMs: number, pauseMs: number, sourcePerKey?: object}} config
+ * @param {number} now
+ * @param {NodeJS.ProcessEnv} [env]
+ * @returns {{
+ *   enabled: boolean,
+ *   phase: "work"|"pause"|null,
+ *   remainingInPhaseMs: number|null,
+ *   workMs: number,
+ *   pauseMs: number,
+ *   sourcePerKey: object,
+ *   marker: "pacing is off (default)"|null,
+ * }}
+ */
+export function projectStatus(sessionId, config, now, env = process.env) {
+  const sourcePerKey = config.sourcePerKey ?? {
+    workMinutes: "default",
+    pauseMinutes: "default",
+  };
+  const base = {
+    workMs: config.workMs,
+    pauseMs: config.pauseMs,
+    sourcePerKey,
+  };
+
+  // R-CONF-2 (review F1, phase 6): a poisoned configuration means pacing is
+  // NOT running regardless of the state file — report the suspension with
+  // its reason instead of a live countdown for a cycle that will never
+  // execute. Checked before the state read: a never-enabled session with
+  // invalid settings never reaches the hook's FR-007 notice (its state
+  // guard short-circuits first), so this projection is the only surfacing.
+  if (config.disabled === true) {
+    return {
+      enabled: false,
+      phase: null,
+      remainingInPhaseMs: null,
+      marker: null,
+      noticeReason:
+        typeof config.noticeReason === "string" && config.noticeReason.length > 0
+          ? config.noticeReason
+          : "Configuration invalid",
+      ...base,
+    };
+  }
+
+  const state = readState(sessionId, env);
+  if (!state) {
+    return {
+      enabled: false,
+      phase: null,
+      remainingInPhaseMs: null,
+      marker: "pacing is off (default)",
+      ...base,
+    };
+  }
+
+  if (state.enabled !== true) {
+    return {
+      enabled: false,
+      phase: null,
+      remainingInPhaseMs: null,
+      marker: null,
+      ...base,
+    };
+  }
+
+  if (typeof state.cycleStartedAt !== "number" || !Number.isFinite(state.cycleStartedAt)) {
+    return {
+      enabled: false,
+      phase: null,
+      remainingInPhaseMs: null,
+      marker: null,
+      ...base,
+    };
+  }
+
+  const { phase, remainingMs } = computePhase(state, config, now);
+  return {
+    enabled: true,
+    phase,
+    remainingInPhaseMs: remainingMs,
+    marker: null,
+    ...base,
+  };
+}
+
+/**
+ * Formats a `projectStatus` result for human-facing stdout (slash command).
+ * Never used by the Stop hook — keeps model-silence intact (FR-009 / US2).
+ */
+export function formatStatusReport(status) {
+  // Configuration suspension beats every other inactive marker (review F1).
+  if (typeof status.noticeReason === "string" && status.noticeReason.length > 0) {
+    return `Slow-down pacing: NOT running — configuration invalid. ${status.noticeReason}`;
+  }
+  if (status.marker === "pacing is off (default)") {
+    return "Slow-down pacing: pacing is off (default).";
+  }
+  if (!status.enabled) {
+    return "Slow-down pacing: disabled.";
+  }
+
+  const workMin = status.workMs / 60_000;
+  const pauseMin = status.pauseMs / 60_000;
+  const remainingSec = Math.max(0, Math.ceil(status.remainingInPhaseMs / 1000));
+  const src = status.sourcePerKey ?? {};
+  const workSrc = src.workMinutes ?? "default";
+  const pauseSrc = src.pauseMinutes ?? "default";
+
+  return [
+    "Slow-down pacing: enabled.",
+    `Phase: ${status.phase} (${remainingSec}s remaining).`,
+    `Work: ${workMin} min (${workSrc}), pause: ${pauseMin} min (${pauseSrc}).`,
+  ].join("\n");
 }
 
 /**
