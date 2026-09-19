@@ -71,7 +71,7 @@ Contract:
 | `pending.json` present | adopt into this session's state, delete pending, then re-evaluate table from the top |
 | state `sessionId ≠ stdin session_id` | treat state as absent (R-STATE-1) |
 
-**Test seams** (production-inert): `SLOW_DOWN_TIME_SCALE` (divides sleeps, tests only), `SLOW_DOWN_NOW` (fake clock epoch ms, tests only), `SLOW_DOWN_DATA_DIR` (redirect state dir in tests). Scripts MUST ignore `SLOW_DOWN_TIME_SCALE`/`SLOW_DOWN_NOW` unless `NODE_ENV === "test"`.
+**Test seams** (production-inert): `SLOW_DOWN_TIME_SCALE` (divides sleeps, tests only), `SLOW_DOWN_NOW` (fake clock epoch ms, tests only), `SLOW_DOWN_DATA_DIR` (redirect state dir in tests), `SLOW_DOWN_GLOBAL_SETTINGS` / `SLOW_DOWN_PROJECT_SETTINGS` (override the settings-file locations in tests — a layer left unset in test mode resolves to no file; production always reads the real `~/.claude/settings.json` and `<project>/.claude/settings.json`). Scripts MUST ignore `SLOW_DOWN_TIME_SCALE`/`SLOW_DOWN_NOW`/`SLOW_DOWN_*_SETTINGS` unless `NODE_ENV === "test"`.
 
 ## 4. Slash Command Contracts (user-initiated; outside pause scope)
 
