@@ -107,3 +107,21 @@ Mechanics (qodo PR #8): commands receive the plugin data directory via the `${CL
 - Per-key resolution: project → global → default (`workMinutes` 5, `pauseMinutes` 4).
 - Unknown keys ignored; invalid durations (≤ 0, non-numeric, non-finite) disable pacing for the session with a user-only notice (FR-007).
 - The plugin never writes these files.
+
+## 6. Marketplace Manifest & Distribution (post-spec addition)
+
+`.claude-plugin/marketplace.json` turns the repo itself into a single-plugin marketplace (post-v1 packaging addition; no runtime surface changes). The entry `source: "./"` resolves to the repo root — the plugin *is* the marketplace root. `plugin.json` stays the single source of truth for name/version/description (marketplace `strict` semantics); the entry's `description` is the marketplace listing blurb only.
+
+Distribution commands (verified end-to-end locally: add → install → list → uninstall → remove):
+
+```bash
+# from a local clone (development)
+claude plugin marketplace add /path/to/slow_down_session_claude_code_plugin
+# from GitHub (after merge/push)
+claude plugin marketplace add ahmedyehya92/slow_down_session_claude_code_plugin
+# then
+claude plugin install slow-down-pacing@slow-down-pacing   # user scope (default)
+claude plugin validate . --strict                          # manifest + marketplace validation
+```
+
+Note: `--strict` requires the marketplace-level `description` field (a missing one is a warning → strict failure).
