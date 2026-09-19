@@ -195,6 +195,9 @@ function readStateFileIn(stateDir, sessionId) {
 
 /**
  * Consumes pending.json if present, non-stale (<= 24h), valid, and matching sessionId.
+ * Stale intents and complete-but-invalid intents (unknown action) are PRUNED
+ * (file deleted) whenever any session's hook encounters them; a fresh valid
+ * intent scoped to a different session is preserved for that session (qodo PR #7).
  * Atomically updates state file for sessionId and unlinks pending.json.
  * Returns the state parcel applied ({ enabled: true, phase: "work", cycleStartedAt } or { enabled: false }),
  * or null if no valid/fresh pending action applied or stateDir null.
@@ -229,12 +232,9 @@ export function applyPending(stateDir, sessionId, now = Date.now()) {
     return null;
   }
 
-  // Session ID scope check: if pending.json contains a sessionId, it must match
-  if (pending.sessionId && pending.sessionId !== sessionId) {
-    return null;
-  }
-
-  // Stale check: requestedAt missing, non-finite, or older than 24 hours (86,400,000 ms)
+  // Stale check FIRST: requestedAt missing, non-finite, or older than 24 hours
+  // (86,400,000 ms) — pruned regardless of session scope, so a stale intent
+  // never lingers just because the wrong session's hook saw it (qodo PR #7).
   const { action, requestedAt } = pending;
   const isStale = typeof requestedAt !== "number" ||
     !Number.isFinite(requestedAt) ||
@@ -245,8 +245,16 @@ export function applyPending(stateDir, sessionId, now = Date.now()) {
     return null;
   }
 
-  // Action allow-list check
+  // Action allow-list check: a complete-but-invalid intent can never become
+  // valid — prune it rather than re-reading it on every hook run (qodo PR #7).
   if (action !== "enable" && action !== "disable") {
+    try { fs.unlinkSync(pendingPath); } catch { /* ignore if already unlinked */ }
+    return null;
+  }
+
+  // Session ID scope check LAST: a fresh, valid intent for another session
+  // must be preserved for that session to adopt.
+  if (pending.sessionId && pending.sessionId !== sessionId) {
     return null;
   }
 

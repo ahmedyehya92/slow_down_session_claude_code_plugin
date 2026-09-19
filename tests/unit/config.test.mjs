@@ -355,6 +355,22 @@ test("Case 11b (review F1 regression): PRODUCTION poison settings yield disabled
   });
 });
 
+test("Case 12 (qodo PR #7): an unreadable settings location (directory) poisons the config — never silent defaults", () => {
+  withTempDir((tmpDir) => {
+    const dirAsSettings = path.join(tmpDir, "as-dir");
+    fs.mkdirSync(dirAsSettings);
+    const cfg = resolveConfig({
+      NODE_ENV: "test",
+      SLOW_DOWN_PROJECT_SETTINGS: dirAsSettings,
+    });
+    assert.equal(cfg.disabled, true, "exists-but-unreadable must fail safe to disabled");
+    assert.ok(
+      typeof cfg.noticeReason === "string" && cfg.noticeReason.includes("Failed to read"),
+      `reason should name the read failure (got: ${cfg.noticeReason})`,
+    );
+  });
+});
+
 test("Case 12 & 13: Minutes convert to ms and resolveConfig accepts explicit env object without process.env mutation", () => {
   withTempDir((tmpDir) => {
     const projPath = path.join(tmpDir, "project.json");

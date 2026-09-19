@@ -19,8 +19,19 @@ function loadLayer(filePath) {
   let raw;
   try {
     raw = fs.readFileSync(filePath, "utf8");
-  } catch {
-    return { present: false, poisoned: false, obj: null };
+  } catch (err) {
+    if (err && err.code === "ENOENT") {
+      // Vanished between the exists check and the read — genuinely absent.
+      return { present: false, poisoned: false, obj: null };
+    }
+    // Exists but unreadable (EACCES, EISDIR, …): the user HAS settings we
+    // cannot use — fail safe to disabled, never silently default (qodo PR #7).
+    return {
+      present: true,
+      poisoned: true,
+      reason: `Failed to read settings file at ${filePath} (${err && err.code})`,
+      obj: null,
+    };
   }
 
   let parsed;

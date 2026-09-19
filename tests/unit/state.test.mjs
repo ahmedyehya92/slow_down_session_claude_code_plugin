@@ -130,7 +130,7 @@ describe("applyPending", () => {
     assert.equal(fs.existsSync(path.join(tmpDir, "my-session.json")), false);
   });
 
-  it("8. unknown action leaves pending.json untouched", () => {
+  it("8. unknown action is pruned: pending.json deleted, no state written (qodo PR #7)", () => {
     const now = 1000000;
     const pendingFile = path.join(tmpDir, "pending.json");
     fs.writeFileSync(pendingFile, JSON.stringify({ action: "invalid_action", requestedAt: now }));
@@ -138,7 +138,7 @@ describe("applyPending", () => {
     const res = applyPending(tmpDir, "sess-8", now);
 
     assert.equal(res, null);
-    assert.equal(fs.existsSync(pendingFile), true);
+    assert.equal(fs.existsSync(pendingFile), false, "invalid intent must be pruned, not re-read forever");
     assert.equal(fs.existsSync(path.join(tmpDir, "sess-8.json")), false);
   });
 
@@ -211,5 +211,16 @@ describe("applyPending", () => {
     assert.deepEqual(res, { enabled: true, phase: "work", cycleStartedAt: now });
     const st = JSON.parse(fs.readFileSync(path.join(tmpDir, "sess-15.json"), "utf8"));
     assert.equal(st.sessionId, "sess-15");
+  });
+
+  it("16. stale intent scoped to another sessionId is still pruned (stale check precedes scope, qodo PR #7)", () => {
+    const now = 1000000;
+    const pendingFile = path.join(tmpDir, "pending.json");
+    fs.writeFileSync(pendingFile, JSON.stringify({ action: "enable", requestedAt: now - 24 * 60 * 60 * 1000 - 5, sessionId: "other-session" }));
+
+    const res = applyPending(tmpDir, "my-session", now);
+
+    assert.equal(res, null);
+    assert.equal(fs.existsSync(pendingFile), false, "stale intent must not linger just because the wrong session saw it");
   });
 });
