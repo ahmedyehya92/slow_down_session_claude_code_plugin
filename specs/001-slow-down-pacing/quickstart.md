@@ -27,6 +27,15 @@ Expected: plugin loads, no hook errors in `/hooks`; validation passes.
 
 **PATH caveat (nvm/fnm users).** The hook spawns `node` directly (exec form, no shell), so it resolves from Claude Code's hook-spawn environment — not your interactive shell. If `node` is managed by nvm/fnm and does not resolve there, the hook fails to spawn and pacing **silently degrades to "pause skipped"** (FR-008) with no diagnostic on screen. Ensure a stable `node` on the harness PATH (e.g. `nvm alias default <version>` and launch Claude Code from a shell where it resolves, or symlink into `~/.local/bin`), then confirm `/hooks` shows no hook errors after a paced turn.
 
+**Persistent install (marketplace).** The repo ships a `.claude-plugin/marketplace.json`, so it can be installed without the per-session flag:
+
+```bash
+claude plugin marketplace add ahmedyehya92/slow_down_session_claude_code_plugin   # or a local path to the clone
+claude plugin install slow-down-pacing@slow-down-pacing
+```
+
+Verify with `claude plugin list`; remove with `claude plugin uninstall slow-down-pacing@slow-down-pacing`.
+
 ## 2. Default-off guarantee (FR-015, SC-007)
 
 1. Start a fresh session (`claude --plugin-dir …`).

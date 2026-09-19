@@ -1,0 +1,14 @@
+{
+  "name": "slow-down-pacing",
+  "description": "Personal marketplace for the slow-down-pacing Claude Code plugin: wall-clock work/pause pacing that is silent to the model.",
+  "owner": {
+    "name": "Ahmed Yehya"
+  },
+  "plugins": [
+    {
+      "name": "slow-down-pacing",
+      "source": "./",
+      "description": "Configurable work/pause cycles for Claude Code sessions: work 5 minutes, pause 4 minutes, repeat. Silent to the model; safe for the session."
+    }
+  ]
+}
