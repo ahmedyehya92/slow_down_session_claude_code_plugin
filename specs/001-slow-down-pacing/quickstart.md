@@ -71,5 +71,5 @@ Expected: plugin loads, no hook errors in `/hooks`; validation passes.
 
 1. Enable pacing, trigger a pause (spinner visible).
 2. Mid-pause, send the agent a prompt.
-3. **Expected**: the spinner clears immediately — the agent responds without waiting for the pause to finish; the next pause boundary shifts by one full cycle (the interrupted hook was aborted with no state write, so the next hook run recomputes from the wall clock).
+3. **Expected**: the spinner clears immediately — the agent responds without waiting for the pause to finish; the pause window continues on the wall clock (if the user's turn finishes while the window is still open, the remaining pause applies at the next Stop boundary; the interrupted hook persisted nothing, so the phase is always recomputed from the wall clock, never a stale pause).
 4. Confirm no prompt text was lost or duplicated.
