@@ -209,12 +209,12 @@ describe("projectStatus", () => {
     assert.match(formatStatusReport(status), /NOT running/);
   });
 
-  it("poisoned config with empty noticeReason falls back to a generic reason", () => {
+  it("poisoned config with empty noticeReason falls back to a generic reason, no doubled prefix (qodo PR #8)", () => {
     const poisoned = { ...CONFIG, disabled: true, noticeReason: null };
     const status = projectStatus("sess-poison-empty-reason", poisoned, T0, env);
     assert.equal(status.enabled, false);
     assert.equal(status.noticeReason, "Configuration invalid");
-    assert.match(formatStatusReport(status), /NOT running — configuration invalid\. Configuration invalid/);
+    assert.equal(formatStatusReport(status), "Slow-down pacing: NOT running — Configuration invalid");
   });
 
   it("enabled with corrupt cycleStartedAt → fail-closed enabled false, prints 'disabled.' (review F4)", () => {

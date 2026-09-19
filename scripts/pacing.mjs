@@ -183,8 +183,10 @@ export function projectStatus(sessionId, config, now, env = process.env) {
  */
 export function formatStatusReport(status) {
   // Configuration suspension beats every other inactive marker (review F1).
+  // The projection already guarantees a non-empty reason, so it stands alone
+  // (qodo PR #8: no doubled "configuration invalid" prefix).
   if (typeof status.noticeReason === "string" && status.noticeReason.length > 0) {
-    return `Slow-down pacing: NOT running — configuration invalid. ${status.noticeReason}`;
+    return `Slow-down pacing: NOT running — ${status.noticeReason}`;
   }
   if (status.marker === "pacing is off (default)") {
     return "Slow-down pacing: pacing is off (default).";
