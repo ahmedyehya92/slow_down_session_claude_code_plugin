@@ -77,6 +77,8 @@ Contract:
 
 All commands: `disable-model-invocation: true`, `allowed-tools: Bash(node *)` scoped to the plugin scripts. They run a tiny script invocation and report the result; this is a user-requested action and not part of the pause (Model Silence applies to pauses).
 
+Mechanics (qodo PR #8): commands receive the plugin data directory via the `${CLAUDE_PLUGIN_DATA}` placeholder — substituted by Claude Code when the command content is loaded — and pass it explicitly into the scripts' `env` argument; the `CLAUDE_PLUGIN_DATA` environment variable is documented as **absent** from Bash tool processes. `/slow-down-pacing:status` reads the session id from `process.env.CLAUDE_CODE_SESSION_ID` (documented to match the hook's stdin `session_id`), never via shell interpolation. Error paths set `process.exitCode` instead of calling `process.exit` so piped stderr always flushes.
+
 ### `/slow-down-pacing:on`
 - Effect: writes `pending.json` `{action: "enable", requestedAt: now}` under `CLAUDE_PLUGIN_DATA`.
 - Output to user: confirmation + current durations + "pacing begins after your next exchange".
@@ -89,6 +91,8 @@ All commands: `disable-model-invocation: true`, `allowed-tools: Bash(node *)` sc
 ### `/slow-down-pacing:status`
 - Effect: read-only — prints enabled/disabled, current phase, time remaining in phase, work/pause durations, and whether each came from project or global config.
 - MUST be safe when pacing has never been enabled (prints "pacing is off (default)").
+- Invalid configuration (R-CONF-2) is reported as NOT running with the reason — never a live countdown for a cycle that will not execute; this takes precedence over the never-enabled marker, so a never-enabled session with broken settings still surfaces the problem (review F1, phase 6).
+- If the session id cannot be determined, the command fails honestly (stderr + exit 1) rather than printing a false "off" (review F2, phase 6).
 
 ## 5. Configuration Contract (settings files)
 
