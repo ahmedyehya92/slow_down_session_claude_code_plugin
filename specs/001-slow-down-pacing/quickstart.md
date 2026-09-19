@@ -1,6 +1,6 @@
 # Quickstart: Validate Slow-Down Pacing
 
-End-to-end validation scenarios for the plugin. Prerequisites: Claude Code ≥ 2.1, Node ≥ 18. Implementation details live in [plan.md](./plan.md) and [contracts/plugin-surface.md](./contracts/plugin-surface.md).
+End-to-end validation scenarios for the plugin. Prerequisites: Claude Code ≥ 2.1; Node ≥ 18 at runtime, Node ≥ 21 to run the §0 test suite (quoted-glob discovery — see plan.md T002). Implementation details live in [plan.md](./plan.md) and [contracts/plugin-surface.md](./contracts/plugin-surface.md).
 
 ## 0. Automated test suite
 
@@ -24,6 +24,8 @@ claude plugin validate . --strict   # from the repo root; manifest + hooks.json 
 ```
 
 Expected: plugin loads, no hook errors in `/hooks`; validation passes.
+
+**PATH caveat (nvm/fnm users).** The hook spawns `node` directly (exec form, no shell), so it resolves from Claude Code's hook-spawn environment — not your interactive shell. If `node` is managed by nvm/fnm and does not resolve there, the hook fails to spawn and pacing **silently degrades to "pause skipped"** (FR-008) with no diagnostic on screen. Ensure a stable `node` on the harness PATH (e.g. `nvm alias default <version>` and launch Claude Code from a shell where it resolves, or symlink into `~/.local/bin`), then confirm `/hooks` shows no hook errors after a paced turn.
 
 ## 2. Default-off guarantee (FR-015, SC-007)
 

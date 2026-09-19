@@ -30,15 +30,15 @@ A Claude Code plugin that paces sessions with a repeating work/pause cycle (defa
 
 ## Constitution Check
 
-*GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
+*GATE: Must pass before Phase 0 research. Re-check after Phase 1 design. Phase 7 re-check (T026): 2026-09-19.*
 
 | Principle | Status | Evidence |
 |---|---|---|
-| I. Session Integrity | ✅ PASS | Pause = synchronous Stop-hook command that sleeps then exits; Claude Code's own process supervisor manages the hook, never vice versa. Stop hooks do not fire on user interrupts (native shutdown precedence, FR-012). No process kills, signals, or session-file writes. |
-| II. Model Silence | ✅ PASS | Exit code 0 with empty output is documented as contributing nothing to Claude's context (hooks reference). No `decision`/`reason`/`additionalContext` fields are ever emitted. The only model-visible plugin activity is the user-initiated slash-command turns (explicitly out of pause scope). |
-| III. Deterministic Pacing | ✅ PASS | Wall-clock state machine: phase computed from timestamps and fixed configured durations; no randomness, no hidden state beyond the session state file. |
-| IV. Human Transparency & Control | ✅ PASS | `statusMessage` shows the pause on the spinner; `/status` command reports state; `/on` `/off` toggle per session without restart. |
-| V. Simplicity & Minimal Footprint | ✅ PASS | No daemon, no MCP server, no external processes beyond one short-lived hook process; ~4 source files. Complexity tracking table empty. |
+| I. Session Integrity | ✅ PASS | Pause = synchronous Stop-hook sleep then exit 0 (`scripts/pacing.mjs`); plugin never calls `process.kill` / never spawns children / never writes session transcripts — only `${CLAUDE_PLUGIN_DATA}/sessions/*`. Mid-pause SIGTERM leaves state untouched (live data-dir kill + integration kill test, FR-008/FR-010a). Only `Stop` is registered (`hooks/hooks.json`); FR-012 shutdown precedence is harness-native. |
+| II. Model Silence | ✅ PASS | Hook: exit 0, empty stderr; stdout empty or exactly `{"systemMessage"}` (FR-007 one-shot). Never emits `decision`/`reason`/`continue`/`hookSpecificOutput` (US2 suite, 80/80 `npm test`). Slash commands are `disable-model-invocation: true`. Live glm transcripts (2026-09-19): no pause-spinner text in assistant turns; no `systemMessage` leakage into model context. |
+| III. Deterministic Pacing | ✅ PASS | Pure `computePhase(state, config, now)` wall-clock math; no `Math.random`. Live proof: 0.05/0.05 settings → Stop-hook pause wall-clock **2973 ms** vs 3000 ms expected; cycle boundary advanced exactly one cycle. |
+| IV. Human Transparency & Control | ✅ PASS | Spinner: `hooks/hooks.json` `statusMessage` = "Slow-down pacing: pausing…". Live glm: `/on` wrote pending then Stop adopted `{enabled:true, phase:work}`; status reports off(default) / enabled correctly; `/on` `/off` `/status` present under `commands/`. |
+| V. Simplicity & Minimal Footprint | ✅ PASS | Locked footprint: 3 scripts + 3 commands + 1 hooks.json + 1 manifest; zero runtime npm deps. `claude plugin validate . --strict` → Validation passed (T024). No daemon/MCP; every feature traces to a stated user need (US1–US4) — no unjustified complexity (constitution V; review F2: reworded — no complexity *table* exists, the constitution requires spec-justified complexity, which spec.md/plan.md record). |
 
 ## Project Structure
 

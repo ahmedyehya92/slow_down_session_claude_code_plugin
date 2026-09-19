@@ -18,3 +18,7 @@ Thumbs.db
 .idea/
 .vscode/
 /.omo/
+
+# Local Claude Code project settings — test residue from quickstart §5;
+# must not ship in the plugin repo (.claude/CLAUDE.md stays tracked)
+.claude/settings.json
