@@ -52,13 +52,16 @@ function readSessionState(dir, sessionId) {
   return JSON.parse(raw);
 }
 
-function runHook(dir, stdin) {
+function runHook(dir, stdin, extraEnv = {}) {
   const env = {
     ...process.env,
     NODE_ENV: "test",
     SLOW_DOWN_DATA_DIR: dir,
     SLOW_DOWN_NOW: String(FIXED_NOW),
     SLOW_DOWN_TIME_SCALE: String(TIME_SCALE),
+    SLOW_DOWN_GLOBAL_SETTINGS: path.join(dir, "global-settings.json"),
+    SLOW_DOWN_PROJECT_SETTINGS: path.join(dir, "project-settings.json"),
+    ...extraEnv,
   };
   const startedAt = Date.now();
   const result = spawnSync(process.execPath, [HOOK_PATH], {
@@ -290,6 +293,8 @@ test("killed mid-pause writes nothing; the next run recomputes from the wall clo
       SLOW_DOWN_DATA_DIR: dir,
       SLOW_DOWN_NOW: String(FIXED_NOW),
       SLOW_DOWN_TIME_SCALE: "60",
+      SLOW_DOWN_GLOBAL_SETTINGS: path.join(dir, "global-settings.json"),
+      SLOW_DOWN_PROJECT_SETTINGS: path.join(dir, "project-settings.json"),
     };
     const victim = spawn(process.execPath, [HOOK_PATH], { stdio: ["pipe", "pipe", "pipe"], env });
     victim.stdin.write(stopInput());
@@ -324,6 +329,8 @@ test("state changed mid-pause is never clobbered by the post-sleep write (review
       SLOW_DOWN_DATA_DIR: dir,
       SLOW_DOWN_NOW: String(FIXED_NOW),
       SLOW_DOWN_TIME_SCALE: "60",
+      SLOW_DOWN_GLOBAL_SETTINGS: path.join(dir, "global-settings.json"),
+      SLOW_DOWN_PROJECT_SETTINGS: path.join(dir, "project-settings.json"),
     };
     const child = spawn(process.execPath, [HOOK_PATH], { stdio: ["pipe", "pipe", "pipe"], env });
     child.stdin.write(stopInput());
@@ -496,4 +503,119 @@ test("US2: runHook never throws — any internal error degrades to a silent 0, n
     evilEnv,
   );
   assert.equal(exit, 0, "internal error must degrade to exit 0 (no-op, FR-004/FR-008)");
+});
+
+test("US3/R-CONF-2: invalid/disabled config emits one-shot notice on first run and stays silent on second run", () => {
+  const dir = makeTmpDir();
+  try {
+    writeSessionState(dir, SESSION_ID, {
+      enabled: true,
+      phase: "work",
+      cycleStartedAt: FIXED_NOW - WORK_MS / 2,
+    });
+
+    const invalidGlobalFile = path.join(dir, "invalid-global-settings.json");
+    fs.writeFileSync(
+      invalidGlobalFile,
+      JSON.stringify({ slowDownPacing: { workMinutes: 0 } }),
+      "utf8",
+    );
+
+    const customEnv = {
+      SLOW_DOWN_GLOBAL_SETTINGS: invalidGlobalFile,
+    };
+
+    // First run: config is invalid (disabled), state.disabledNoticeShown is undefined/false.
+    const r1 = runHook(dir, stopInput(), customEnv);
+    assertModelSilence(r1, "first run with disabled config");
+    assert.notEqual(r1.stdout, "", "first run must emit notice on stdout");
+    const emitted = JSON.parse(r1.stdout);
+    assert.equal(typeof emitted.systemMessage, "string", "systemMessage must be a string");
+    assert.ok(emitted.systemMessage.length > 0, "systemMessage must be non-empty");
+
+    const stateAfterR1 = readSessionState(dir, SESSION_ID);
+    assert.equal(stateAfterR1.disabledNoticeShown, true, "state must record disabledNoticeShown: true");
+
+    // Second run: disabledNoticeShown is now true -> must be silent (stdout empty).
+    const r2 = runHook(dir, stopInput(), customEnv);
+    assertSilentSuccess(r2, "second run with disabled config");
+
+    const stateAfterR2 = readSessionState(dir, SESSION_ID);
+    assert.deepEqual(stateAfterR2, stateAfterR1, "second run must not modify the state further");
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// ---- T017 — User Story 3: adoption & config wiring through the real binary ----
+
+test("US3/FR-006: pending enable is adopted at the next Stop — fresh work cycle, pending consumed (R-STATE-2)", () => {
+  const dir = makeTmpDir();
+  try {
+    fs.mkdirSync(path.join(dir, "sessions"), { recursive: true });
+    fs.writeFileSync(
+      path.join(dir, "sessions", "pending.json"),
+      JSON.stringify({ action: "enable", requestedAt: FIXED_NOW - 5_000 }),
+    );
+    const r = runHook(dir, stopInput());
+    assertModelSilence(r, "pending enable adoption");
+    assert.ok(r.elapsedMs < INSTANT_THRESHOLD_MS, `fresh work cycle is an instant no-op, took ${r.elapsedMs} ms`);
+
+    const state = readSessionState(dir, SESSION_ID);
+    assert.equal(state.enabled, true);
+    assert.equal(state.phase, "work");
+    assert.equal(state.cycleStartedAt, FIXED_NOW, "adoption anchors the cycle at the fake now");
+    assert.equal(fs.existsSync(path.join(dir, "sessions", "pending.json")), false, "pending.json must be consumed");
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("US3/FR-006: pending disable is adopted — no sleep even when the state was mid-pause (R-STATE-2)", () => {
+  const dir = makeTmpDir();
+  try {
+    writeSessionState(dir, SESSION_ID, {
+      enabled: true,
+      phase: "pause",
+      cycleStartedAt: FIXED_NOW - WORK_MS - PAUSE_MS / 2, // would sleep ~120 ms scaled if still enabled
+    });
+    fs.writeFileSync(
+      path.join(dir, "sessions", "pending.json"),
+      JSON.stringify({ action: "disable", requestedAt: FIXED_NOW - 1_000 }),
+    );
+    const r = runHook(dir, stopInput());
+    assertModelSilence(r, "pending disable adoption");
+    assert.ok(r.elapsedMs < INSTANT_THRESHOLD_MS, `disabled session must not sleep, took ${r.elapsedMs} ms`);
+
+    const state = readSessionState(dir, SESSION_ID);
+    assert.equal(state.enabled, false);
+    assert.equal(fs.existsSync(path.join(dir, "sessions", "pending.json")), false, "pending.json must be consumed");
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("US3/FR-005/FR-006: valid project settings flow through the binary — the pause honors custom durations", () => {
+  const dir = makeTmpDir();
+  try {
+    // Custom schedule: 2 min work / 2 min pause. With the DEFAULT schedule
+    // this anchor (elapsed 180 000 ms < 300 000 ms work) would be an instant
+    // work no-op — so actually sleeping proves the custom config was used.
+    const settingsFile = path.join(dir, "custom-settings.json");
+    fs.writeFileSync(settingsFile, JSON.stringify({ slowDownPacing: { workMinutes: 2, pauseMinutes: 2 } }), "utf8");
+    const anchor = FIXED_NOW - 120_000 - 60_000; // 1 min into the custom 2 min pause
+    writeSessionState(dir, SESSION_ID, { enabled: true, phase: "pause", cycleStartedAt: anchor });
+
+    const scaledMs = 60_000 / TIME_SCALE; // 60 ms real
+    const r = runHook(dir, stopInput(), { SLOW_DOWN_PROJECT_SETTINGS: settingsFile });
+    assertModelSilence(r, "custom-config pause");
+    assert.ok(r.elapsedMs >= scaledMs - 10, `custom pause must actually wait ~${scaledMs} ms (took ${r.elapsedMs} ms)`);
+    assert.ok(r.elapsedMs <= scaledMs + 2_000, `custom pause exceeded tolerance (took ${r.elapsedMs} ms)`);
+
+    // Advance math must use the custom cycle too: anchor + 240 000 ms.
+    const state = readSessionState(dir, SESSION_ID);
+    assert.equal(state.cycleStartedAt, anchor + 240_000, "boundary advance must use the custom cycle length");
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
