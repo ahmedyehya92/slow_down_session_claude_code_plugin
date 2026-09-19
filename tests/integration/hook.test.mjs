@@ -276,3 +276,47 @@ test("killed mid-pause writes nothing; the next run recomputes from the wall clo
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("state changed mid-pause is never clobbered by the post-sleep write (review S1)", async () => {
+  const dir = makeTmpDir();
+  try {
+    const anchor = FIXED_NOW - WORK_MS - 120_000; // 2 min into the pause
+    writeSessionState(dir, SESSION_ID, { enabled: true, phase: "pause", cycleStartedAt: anchor });
+    const statePath = path.join(dir, "sessions", `${SESSION_ID}.json`);
+
+    // Remaining pause = 120 000 ms; scale 60 → 2 s real sleep.
+    const env = {
+      ...process.env,
+      NODE_ENV: "test",
+      SLOW_DOWN_DATA_DIR: dir,
+      SLOW_DOWN_NOW: String(FIXED_NOW),
+      SLOW_DOWN_TIME_SCALE: "60",
+    };
+    const child = spawn(process.execPath, [HOOK_PATH], { stdio: ["pipe", "pipe", "pipe"], env });
+    child.stdin.write(stopInput());
+    child.stdin.end();
+
+    // At ~700 ms (mid-sleep), disable the session externally with the anchor
+    // unchanged — exactly what a concurrent writer (/off, a future adoption
+    // mechanism) would do. The post-sleep write must NOT resurrect pacing.
+    setTimeout(() => {
+      fs.writeFileSync(
+        statePath,
+        JSON.stringify({ sessionId: SESSION_ID, enabled: false, phase: "pause", cycleStartedAt: anchor }, null, 2),
+      );
+    }, 700);
+
+    const exit = await new Promise((resolve) =>
+      child.on("exit", (code, signal) => resolve({ code, signal })),
+    );
+    assert.equal(exit.code, 0, `expected clean exit 0, got code=${exit.code} signal=${exit.signal}`);
+    assert.equal(child.stdout.read(), null, "no stdout expected");
+    assert.equal(child.stderr.read(), null, "no stderr expected");
+
+    const after = JSON.parse(fs.readFileSync(statePath, "utf8"));
+    assert.equal(after.enabled, false, "external disable must survive the post-sleep write (S1)");
+    assert.equal(after.cycleStartedAt, anchor, "boundary must not advance over a changed state (S1)");
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

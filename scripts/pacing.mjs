@@ -57,12 +57,15 @@ export function computePhase(state, config, now) {
   const { workMs, pauseMs } = config;
   const cycleMs = workMs + pauseMs;
 
-  const elapsed = now - state.cycleStartedAt;
+  // Clamp negative elapsed (future-dated anchor / clock regression) so the
+  // modulo offset always stays in [0, cycleMs): remainingMs never exceeds the
+  // phase length and the stored boundary is never rebased backwards.
+  const elapsed = Math.max(0, now - state.cycleStartedAt);
   // Offset inside the current cycle. The modulo over the continuous elapsed
   // time is what makes the timer deterministic across runs (FR-011).
   const offset = elapsed % cycleMs;
   // Wall-clock start of the cycle that contains `now`.
-  const currentCycleStart = now - offset;
+  const currentCycleStart = state.cycleStartedAt + elapsed - offset;
 
   if (offset < workMs) {
     return { phase: "work", remainingMs: workMs - offset, nextCycleStartedAt: currentCycleStart };
@@ -206,13 +209,19 @@ export async function runHook(input, env = process.env) {
   // (research R1); a killed wait degrades gracefully (FR-008/FR-010a).
   await sleep(Math.max(0, Math.round(remainingMs / resolveScale(env))));
 
-  // The pause is over: advance the continuous timer by one full cycle. The
-  // next cycle begins in the work phase at this instant (FR-011). If this
-  // write is interrupted (process killed), nothing is persisted and the next
-  // run recomputes from the old boundary — still correct. The full existing
-  // parcel is re-persisted (spread) so enablement and other session fields
-  // survive the write.
-  writeState(sessionId, { ...state, cycleStartedAt: nextCycleStartedAt + config.workMs + config.pauseMs, phase: "work" }, env);
+  // Re-read after the (possibly minutes-long) pause: only advance the
+  // boundary if the session is still enabled and the anchor has not moved,
+  // so a concurrent state change (e.g. pacing disabled mid-pause) is never
+  // clobbered by this stale pre-sleep snapshot (review S1).
+  const fresh = readState(sessionId, env);
+  if (fresh && fresh.enabled === true && fresh.cycleStartedAt === state.cycleStartedAt) {
+    // The pause is over: advance the continuous timer by one full cycle. The
+    // next cycle begins in the work phase at this instant (FR-011). If this
+    // write is interrupted (process killed), nothing is persisted and the next
+    // run recomputes from the old boundary — still correct. The fresh parcel
+    // is re-persisted (spread) so concurrent session fields survive the write.
+    writeState(sessionId, { ...fresh, cycleStartedAt: nextCycleStartedAt + config.workMs + config.pauseMs, phase: "work" }, env);
+  }
   return 0;
 }
 

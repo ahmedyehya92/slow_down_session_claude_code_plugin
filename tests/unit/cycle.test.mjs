@@ -140,6 +140,27 @@ test("determinism: identical inputs yield identical outputs (±2 s schedule tole
   assert.equal(edgeA.phase, "work");
 });
 
+test("future-dated anchor (within one cycle) clamps: work phase, full work remaining, no rebase (review S2)", () => {
+  // Anchor 2 min ahead of `now` — e.g. a boundary persisted just ahead of a
+  // frozen test clock, or a small backwards clock step. Without the clamp,
+  // negative elapsed inflates remainingMs beyond workMs.
+  const anchor = T0 + 120_000;
+  const r = phaseAt(anchor, T0);
+  assert.equal(r.phase, "work");
+  assert.equal(r.remainingMs, WORK_MS, "remainingMs must not exceed the phase length");
+  assert.equal(r.nextCycleStartedAt, anchor, "anchor must be left untouched");
+});
+
+test("future-dated anchor beyond one cycle never rebases backwards (review S2)", () => {
+  // A >1-cycle clock regression would previously let the work-branch rebase
+  // move cycleStartedAt backwards by a full cycle.
+  const anchor = T0 + 2 * CYCLE_MS + 60_000;
+  const r = phaseAt(anchor, T0);
+  assert.equal(r.phase, "work");
+  assert.equal(r.remainingMs, WORK_MS);
+  assert.equal(r.nextCycleStartedAt, anchor, "must not move the boundary backwards");
+});
+
 test("non-default durations are honored (config is threaded, not hard-coded 5/4) (FR-005)", () => {
   const cfg = { workMs: 120_000, pauseMs: 60_000 };
   const st = stateAt(T0);
